@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Рыцарь и Лучник - Рабочие Спрайты</title>
+<style>
+ * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+ body { background: #0a0608; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; font-family: monospace; overflow: hidden; touch-action: none; }
+ #hud { display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 700px; padding: 6px 12px; color: #e8c87a; font-size: 14px; letter-spacing: 1px; z-index: 10; }
+ canvas { display: block; border: 2px solid #4a2a0a; box-shadow: 0 0 30px #2a0a0060; max-width: 100vw; max-height: 70vh; aspect-ratio: 700/500; image-rendering: pixelated; }
+ 
+ #controls { display: none; width: 100%; max-width: 800px; justify-content: space-between; align-items: center; padding: 10px 20px; position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 20; }
+ .joystick-container { width: 100px; height: 100px; background: rgba(255,255,255,0.05); border: 2px solid rgba(232,200,122,0.3); border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+ #joystick { width: 45px; height: 45px; background: rgba(232,200,122,0.5); border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5); }
+ .btn-group { display: flex; gap: 12px; }
+ .btn { width: 55px; height: 55px; border-radius: 50%; border: 2px solid #e8c87a; background: rgba(74,42,10,0.6); color: #e8c87a; font-size: 20px; display: flex; align-items: center; justify-content: center; transform: scale(1); transition: transform 0.1s; }
+ .btn:active { transform: scale(0.85); background: rgba(232,200,122,0.4); }
+
+ @media (pointer: coarse) {
+   #controls { display: flex; }
+   canvas { max-height: 55vh; }
+ }
+</style>
+</head>
+<body>
+<div id="hud">
+ <span id="hpBar">❤️❤️❤️❤️❤️</span>
+ <span id="title" style="color:#c8a040;font-size:15px;letter-spacing:3px;">⚔️ ВЫБОР ГЕРОЯ ⚔️</span>
+ <span id="arrowCount">🏹 10</span>
+</div>
+
+<canvas id="game" width="700" height="500"></canvas>
+
+<div id="controls">
+ <div class="joystick-container" id="touchZone">
+   <div id="joystick"></div>
+ </div>
+ <div class="btn-group">
+   <div class="btn" id="btnSword">⚔️</div>
+   <div class="btn" id="btnShield">🛡️</div>
+   <div class="btn" id="btnBow">🏹</div>
+ </div>
+</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const hpBar = document.getElementById('hpBar');
+const arrowCount = document.getElementById('arrowCount');
+const title = document.getElementById('title');
+
+// --- ЗАГРУЗКА ВАШЕГО СПРАЙТ-ЛИСТА ---
+// Файл image.png должен лежать в той же папке, что и этот HTML файл!
+const spriteSheet = new Image();
+spriteSheet.src = 'image.png'; 
+
+// Если картинка не загрузилась (например, не совпадает имя файла), включим резервный режим отрисовки, чтобы игра не ломалась
+let isSpriteLoaded = false;
+spriteSheet.onload = () => { isSpriteLoaded = true; };
+spriteSheet.onerror = () => { console.warn("Файл 'image.png' не найден рядом с HTML. Включен резервный режим геометрии."); };
+
+// Динамические параметры под ваш спрайт-лист
+// На вашей картинке 5 кадров в ширину, делим общую ширину на 5
+const SPRITE_W = 56;  
+const SPRITE_H = 55;  
+const TOTAL_FRAMES = 5; 
+
+const TS = 40;
+const COLS = 25, ROWS = 20;
+
+const MAP = [
+ [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+ [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,1],
+ [1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,0,1,1,1,1,1],
+ [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+ [1,0,0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,1,1,1,0,0,0,1],
+ [1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+ [1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+ [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+ [1,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],
+ [1,1,1,0,1,1,1,1,1,0,0,0,0,0,0,0,1,1,1,1,1,0,1,1,1],
+ [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+ [1,0,0,0,0,0,0,0,1,0,0,0,3,0,0,0,1,0,0,0,0,0,0,0,1],
+ [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+];
+
+function tileAt(tx, ty) {
+ if (tx < 0 || ty < 0 || tx >= COLS || ty >= ROWS) return 1;
+ return MAP[ty][tx];
+}
+function isWall(tx, ty) { return tileAt(tx, ty) === 1; }
+
+const cam = { x: 0, y: 0 };
+const player = {
+ x: 2*TS+20, y: 2*TS+20, w: 24, h: 32, speed: 2.8,
+ hp: 5, maxHp: 5, dir: 1, lastFacingRight: true,
+ isMoving: false, animFrame: 0, animTimer: 0,
+ attacking: 0, attackMaxTime: 12, blocking: 0, shootCd: 0, invincible: 0,
+ arrows: 10, frame: 0,
+ bowCharge: 0, maxBowCharge: 45, isChargingBow: false,
+ charClass: 'knight'
+};
+
+let enemies = [], arrows = [], particles = [], items = [];
+let state = 'idle';
+let frameCount = 0;
+
+let touchInput = { dx: 0, dy: 0 };
+let mobileAction = { sword: false, shield: false, bow: false };
+
+const btnKnightZone = { x: 130, y: 240, w: 180, h: 60 };
+const btnArcherZone = { x: 390, y: 240, w: 180, h: 60 };
+
+function spawnEnemies() {
+ const positions = [
+   {x:8,y:2},{x:10,y:2},{x:14,y:2},{x:1,y:7},{x:5,y:8},{x:20,y:8},
+   {x:8,y:10},{x:12,y:10},{x:16,y:10},{x:3,y:13},{x:22,y:13},
+   {x:9,y:16},{x:12,y:16},{x:15,y:16},{x:1,y:17},{x:23,y:17},{x:8,y:18},{x:16,y:18},
+ ];
+
+ let indices = positions.map((_, i) => i);
+ for (let i = indices.length - 1; i > 0; i--) {
+   const j = Math.floor(Math.random() * (i + 1));
+   [indices[i], indices[j]] = [indices[j], indices[i]];
+ }
+ const cupcakeZombies = indices.slice(0, 3);
+
+ enemies = positions.map((p, index) => ({
+   x: p.x*TS+10, y: p.y*TS+10, w: 20, h: 20, hp: 2, maxHp: 2,
+   speed: 0.9+Math.random()*0.5, dir: 0, frame: 0, attackCd: 0, state: 'roam',
+   roamTimer: Math.random()*120, roamDx: 0, roamDy: 0, hitFlash: 0,
+   hasCupcake: cupcakeZombies.includes(index)
+ }));
+}
+
+const keys = {};
+document.addEventListener('keydown', e => {
+ keys[e.code] = true;
+ if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+ 
+ if (state === 'idle') {
+   if (e.code === 'Digit1' || e.code === 'Numpad1') { selectClass('knight'); }
+   if (e.code === 'Digit2' || e.code === 'Numpad2') { selectClass('archer'); }
+ } else if (state === 'dead' || state === 'win') {
+   state = 'idle';
+ }
+});
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+function handleCanvasClick(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clickX = (clientX - rect.left) * scaleX;
+  const clickY = (clientY - rect.top) * scaleY;
+
+  if (state === 'idle') {
+    if (clickX >= btnKnightZone.x && clickX <= btnKnightZone.x + btnKnightZone.w &&
+        clickY >= btnKnightZone.y && clickY <= btnKnightZone.y + btnKnightZone.h) {
+      selectClass('knight');
+    }
+    if (clickX >= btnArcherZone.x && clickX <= btnArcherZone.x + btnArcherZone.w &&
+        clickY >= btnArcherZone.y && clickY <= btnArcherZone.y + btnArcherZone.h) {
+      selectClass('archer');
+    }
+  } else if (state === 'dead' || state === 'win') {
+    state = 'idle';
+  }
+}
+
+canvas.addEventListener('click', e => handleCanvasClick(e.clientX, e.clientY));
+canvas.addEventListener('touchstart', e => {
+  if(e.touches.length > 0) {
+    handleCanvasClick(e.touches[0].clientX, e.touches[0].clientY);
+  }
+});
+
+function selectClass(chosenClass) {
+ player.charClass = chosenClass;
+ initGame();
+}
+
+function initGame() {
+ player.x = 2*TS+10; player.y = 2*TS+10;
+ player.hp = 5; player.maxHp = 5; player.invincible = 0;
+ player.attacking = 0; player.blocking = 0;
+ player.bowCharge = 0; player.isChargingBow = false;
+ player.isMoving = false; player.animFrame = 0; player.animTimer = 0;
+ 
+ if (player.charClass === 'knight') {
+   player.arrows = 10;
+   player.attackMaxTime = 12;
+   title.textContent = '⚔️ РЫЦАРЬ ⚔️';
+   title.style.color = '#c8a040';
+   document.getElementById('btnShield').style.display = 'flex';
+ } else {
+   player.arrows = Infinity;
+   player.attackMaxTime = 15;
+   title.textContent = '🏹 ЛУЧНИК 🏹';
+   title.style.color = '#52a852';
+   document.getElementById('btnShield').style.display = 'none';
+ }
+ 
+ arrows = []; particles = []; items = []; touchInput = { dx: 0, dy: 0 };
+ spawnEnemies();
+ state = 'playing';
+ updateHUD();
+}
+
+function updateHUD() {
+ hpBar.textContent = '❤️'.repeat(Math.max(0,player.hp)) + '🖤'.repeat(Math.max(0,player.maxHp-player.hp));
+ arrowCount.textContent = player.charClass === 'knight' ? '🏹 ' + player.arrows : '🏹 ∞';
+}
+
+function moveWithCollision(obj, dx, dy) {
+ const nx = obj.x+dx, ny = obj.y+dy;
+ const r = obj.w/2-2;
+ const canX = !isWall(Math.floor((nx+r)/TS),Math.floor((obj.y+r)/TS)) &&
+              !isWall(Math.floor((nx-r)/TS),Math.floor((obj.y+r)/TS)) &&
+              !isWall(Math.floor((nx+r)/TS),Math.floor((obj.y-r)/TS)) &&
+              !isWall(Math.floor((nx-r)/TS),Math.floor((obj.y-r)/TS));
+ const canY = !isWall(Math.floor((obj.x+r)/TS),Math.floor((ny+r)/TS)) &&
+              !isWall(Math.floor((obj.x-r)/TS),Math.floor((ny+r)/TS)) &&
+              !isWall(Math.floor((obj.x+r)/TS),Math.floor((ny-r)/TS)) &&
+              !isWall(Math.floor((obj.x-r)/TS),Math.floor((ny-r)/TS));
+ if (canX) obj.x = nx;
+ if (canY) obj.y = ny;
+}
+
+function spawnParticles(x, y, color, n) {
+ for (let i = 0; i < n; i++) {
+   const a = Math.random()*Math.PI*2, s = Math.random()*3+1;
+   particles.push({ x, y, vx: Math.cos(a)*s, vy: Math.sin(a)*s, life: 1, color, r: Math.random()*3+1 });
+ }
+}
+
+function fireArrow(isPiercing) {
+  const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+  const [adx,ady] = dirs[player.dir];
+  
+  arrows.push({ 
+    x: player.x, 
+    y: player.y, 
+    vx: adx * (isPiercing ? 12 : 9), 
+    vy: ady * (isPiercing ? 12 : 9), 
+    isInstakill: player.charClass === 'archer',
+    isPiercing: isPiercing,
+    hitEnemies: []
+  });
+  
+  if (player.charClass === 'knight') player.arrows--; 
+  player.shootCd = 20; 
+  updateHUD();
+}
+
+function update() {
+ frameCount++; player.frame++;
+ if (player.attacking > 0) player.attacking--;
+ if (player.invincible > 0) player.invincible--;
+ if (player.shootCd > 0) player.shootCd--;
+
+ player.blocking = (player.charClass === 'knight' && (keys['KeyX'] || keys['KeyK'] || mobileAction.shield)) ? 1 : 0;
+
+ let dx = 0, dy = 0;
+ if (!player.attacking) {
+   if (keys['KeyW']||keys['ArrowUp'])    { dy=-player.speed; player.dir=0; }
+   if (keys['KeyS']||keys['ArrowDown'])  { dy= player.speed; player.dir=2; }
+   if (keys['KeyA']||keys['ArrowLeft'])  { dx=-player.speed; player.dir=3; player.lastFacingRight = false; }
+   if (keys['KeyD']||keys['ArrowRight']) { dx= player.speed; player.dir=1; player.lastFacingRight = true; }
+   
+   if (dx === 0 && dy === 0 && (touchInput.dx !== 0 || touchInput.dy !== 0)) {
+     dx = touchInput.dx * player.speed;
+     dy = touchInput.dy * player.speed;
+     if (Math.abs(touchInput.dx) > Math.abs(touchInput.dy)) {
+       player.dir = touchInput.dx > 0 ? 1 : 3;
+       player.lastFacingRight = touchInput.dx > 0;
+     } else {
+       player.dir = touchInput.dy > 0 ? 2 : 0;
+     }
+   } else if (dx && dy) { 
+     dx*=0.707; dy*=0.707; 
+   }
+ }
+ 
+ player.isMoving = (dx !== 0 || dy !== 0);
+ 
+ // Скорость анимации ходьбы (каждые 6 тактов меняем кадр)
+ if (player.isMoving) {
+   player.animTimer++;
+   if (player.animTimer >= 6) { 
+     player.animFrame = (player.animFrame + 1) % TOTAL_FRAMES;
+     player.animTimer = 0;
+   }
+ } else {
+   player.animFrame = 0; 
+   player.animTimer = 0;
+ }
+
+ if (!player.blocking && !player.isChargingBow) moveWithCollision(player, dx, dy);
+
+ // АТАКА БЛИЖНЕГО БОЯ
+ if ((keys['KeyZ']||keys['KeyJ']||mobileAction.sword) && !player.attacking) {
+   player.attacking = player.attackMaxTime;
+   mobileAction.sword = false;
+   
+   spawnParticles(player.x, player.y, player.charClass === 'knight' ? '#e8f0ff' : '#b0b0b0', 6);
+   
+   const dirs = [[0,-1],[1,0],[0,1],[-1,0]];
+   const [ddx,ddy] = dirs[player.dir];
+   
+   const hx = player.x + ddx * 20, hy = player.y + ddy * 20;
+   const damage = player.charClass === 'knight' ? 1 : 0.5;
+
+   for (let i = enemies.length - 1; i >= 0; i--) {
+     let e = enemies[i];
+     if (Math.abs(e.x-hx)<35 && Math.abs(e.y-hy)<35) {
+       e.hp -= damage; 
+       e.hitFlash = 12;
+       spawnParticles(e.x, e.y, '#ff4444', 8);
+       if (e.hp<=0) {
+         spawnParticles(e.x, e.y, '#8B0000', 16);
+         if (e.hasCupcake) {
+           items.push({ x: e.x, y: e.y, type: 'cupcake', animTime: Math.random()*100 });
+         }
+         enemies.splice(i, 1);
+       }
+     }
+   }
+ }
+
+ // ЛУК
+ let bowKeyActive = keys['KeyC'] || keys['KeyL'] || mobileAction.bow;
+
+ if (bowKeyActive && player.shootCd <= 0 && (player.arrows > 0 || player.charClass === 'archer')) {
+   if (player.charClass === 'archer') {
+     player.isChargingBow = true;
+     if (player.bowCharge < player.maxBowCharge) {
+       player.bowCharge++;
+       if (player.bowCharge % 5 === 0) spawnParticles(player.x, player.y, '#66ff66', 1);
+     }
+   } else {
+     fireArrow(false);
+   }
+ } else {
+   if (player.isChargingBow) {
+     let isPiercing = player.bowCharge >= player.maxBowCharge;
+     fireArrow(isPiercing);
+     player.isChargingBow = false;
+     player.bowCharge = 0;
+     mobileAction.bow = false;
+   }
+ }
+
+ // СТРЕЛЫ
+ for (let i = arrows.length-1; i>=0; i--) {
+   const a = arrows[i]; a.x+=a.vx; a.y+=a.vy;
+   if (isWall(Math.floor(a.x/TS), Math.floor(a.y/TS))) { arrows.splice(i,1); continue; }
+   
+   for (let j = enemies.length-1; j>=0; j--) {
+     const e = enemies[j];
+     if (Math.abs(a.x-e.x)<18 && Math.abs(a.y-e.y)<18) {
+       if (a.isPiercing && a.hitEnemies.includes(e)) continue;
+
+       if (a.isInstakill) e.hp = 0;
+       else e.hp--;
+       
+       e.hitFlash=12;
+       spawnParticles(e.x, e.y, '#ff6644', 8);
+       
+       if (e.hp<=0) { 
+         spawnParticles(e.x,e.y,'#8B0000',16); 
+         if (e.hasCupcake) items.push({ x: e.x, y: e.y, type: 'cupcake', animTime: Math.random()*100 });
+         enemies.splice(j,1); 
+       }
+       
+       if (a.isPiercing) {
+         a.hitEnemies.push(e);
+       } else {
+         arrows.splice(i,1);
+         break; 
+       }
+     }
+   }
+ }
+
+ // КЕКСЫ
+ for (let i = items.length - 1; i >= 0; i--) {
+   let it = items[i];
+   it.animTime++;
+   if (Math.abs(player.x - it.x) < 20 && Math.abs(player.y - it.y) < 20) {
+     if (player.hp < player.maxHp) {
+       player.hp = Math.min(player.maxHp, player.hp + 1);
+       spawnParticles(player.x, player.y, '#ff99cc', 15);
+       updateHUD();
+       items.splice(i, 1);
+     }
+   }
+ }
+
+ // ЗОМБИ
+ enemies.forEach(e => {
+   if (e.hitFlash>0) e.hitFlash--; e.frame++;
+   const pdx=player.x-e.x, pdy=player.y-e.y; const dist=Math.sqrt(pdx*pdx+pdy*pdy);
+   if (dist<160) {
+     e.state='chase'; const len=dist||1;
+     moveWithCollision(e,(pdx/len)*e.speed,0); moveWithCollision(e,0,(pdy/len)*e.speed);
+     if (dist<24 && e.attackCd<=0) {
+       e.attackCd=60;
+       if (!player.blocking && !player.invincible) {
+         player.hp--; player.invincible=60; spawnParticles(player.x,player.y,'#ff2222',10); updateHUD();
+         if (player.hp<=0) state='dead';
+       } else if (player.blocking) { spawnParticles(player.x,player.y,'#aaaaff',8); }
+     }
+   } else {
+     e.state='roam'; e.roamTimer--;
+     if (e.roamTimer<=0) {
+       const angle=Math.random()*Math.PI*2;
+       e.roamDx=Math.cos(angle)*e.speed*0.6; e.roamDy=Math.sin(angle)*e.speed*0.6;
+       e.roamTimer=60+Math.random()*80;
+     }
+     moveWithCollision(e,e.roamDx,e.roamDy);
+   }
+   if (e.attackCd>0) e.attackCd--;
+ });
+
+ const ptx=Math.floor(player.x/TS), pty=Math.floor(player.y/TS);
+ if ((tileAt(ptx,pty)===3||tileAt(ptx+1,pty)===3||tileAt(ptx,pty+1)===3) && enemies.length===0) state='win';
+
+ for (let i=particles.length-1; i>=0; i--) {
+   const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.9; p.vy*=0.9; p.life-=0.035;
+   if (p.life<=0) particles.splice(i,1);
+ }
+
+ cam.x = Math.max(0, Math.min(COLS*TS-W, player.x-W/2));
+ cam.y = Math.max(0, Math.min(ROWS*TS-H, player.y-H/2));
+}
+
+function drawTile(tx, ty) {
+ const t=tileAt(tx,ty); const sx=tx*TS-cam.x, sy=ty*TS-cam.y;
+ if (t===1) {
+   ctx.fillStyle='#2a1a0e'; ctx.fillRect(sx,sy,TS,TS);
+   ctx.fillStyle='#3a2518'; ctx.fillRect(sx+2,sy+2,TS-4,TS/2-2);
+   ctx.fillStyle='#1a0e08'; ctx.fillRect(sx,sy+TS-4,TS,4);
+   ctx.strokeStyle='#1a0e08'; ctx.lineWidth=1;
+   ctx.beginPath(); ctx.moveTo(sx,sy+TS/2); ctx.lineTo(sx+TS,sy+TS/2); ctx.stroke();
+   ctx.beginPath(); ctx.moveTo(sx+TS/2,sy); ctx.lineTo(sx+TS/2,sy+TS/2); ctx.stroke();
+ } else if (t===0) {
+   ctx.fillStyle=((tx+ty)%2===0)?'#1e120a':'#231508'; ctx.fillRect(sx,sy,TS,TS);
+ } else if (t===3) {
+   ctx.fillStyle='#2a1a2e'; ctx.fillRect(sx,sy,TS,TS);
+   const glow=ctx.createRadialGradient(sx+TS/2,sy+TS/2,2,sx+TS/2,sy+TS/2,TS/2);
+   glow.addColorStop(0,'#ff99cc40'); glow.addColorStop(1,'transparent');
+   ctx.fillStyle=glow; ctx.fillRect(sx,sy,TS,TS);
+ }
+}
+
+function drawPlayer() {
+ if (player.invincible > 0 && frameCount % 6 < 3) return;
+ 
+ const sx = player.x - cam.x;
+ const sy = player.y - cam.y;
+ 
+ ctx.save();
+ ctx.translate(sx, sy);
+ 
+ // Автоматический разворот влево-вправо
+ if (!player.lastFacingRight) {
+   ctx.scale(-1, 1);
+ }
+ 
+ if (isSpriteLoaded) {
+   // --- ОТРИСОВКА ОРИГИНАЛЬНОГО СПРАЙТА ---
+   // Рыцарь — верхняя строка (Y = 0), Лучник — нижняя строка (Y = 55 пикселей)
+   let sourceY = (player.charClass === 'knight') ? 0 : SPRITE_H;
+   let sourceX = player.animFrame * SPRITE_W;
+   
+   ctx.drawImage(
+     spriteSheet,
+     sourceX, sourceY, SPRITE_W, SPRITE_H,   // Вырезаем кадр из картинки
+     -24, -24, 48, 44                         // Отрисовываем по центру хитбокса
+   );
+ } else {
+   // --- РЕЗЕРВНЫЙ ВАРИАНТ (Если картинка еще не загрузилась или отсутствует) ---
+   ctx.fillStyle = player.charClass === 'knight' ? '#848d96' : '#2b4c1f';
+   ctx.fillRect(-12, -16, 24, 32);
+   ctx.fillStyle = '#ffcc00';
+   ctx.fillRect(2, -12, 6, 4); 
+ }
+ 
+ // Спецэффекты поверх моделек
+ if (player.charClass === 'knight' && player.blocking) {
+   ctx.fillStyle = 'rgba(173, 181, 189, 0.4)';
+   ctx.strokeStyle = '#fff';
+   ctx.lineWidth = 2;
+   ctx.beginPath(); ctx.arc(12, 0, 14, -Math.PI/2, Math.PI/2); ctx.stroke(); ctx.fill();
+ }
+ 
+ if (player.charClass === 'archer' && player.isChargingBow) {
+   let pct = player.bowCharge / player.maxBowCharge;
+   ctx.strokeStyle = pct >= 1 ? '#46ff46' : '#ffc107';
+   ctx.lineWidth = 3;
+   ctx.beginPath(); ctx.arc(0, -22, 6, -Math.PI/2, -Math.PI/2 + (Math.PI*2 * pct)); ctx.stroke();
+ }
+
+ ctx.restore();
+}
+
+function drawZombie(e) {
+ const sx=e.x-cam.x, sy=e.y-cam.y; const bob=Math.sin(e.frame*0.15)*2, flash=e.hitFlash>0;
+ ctx.globalAlpha=0.25; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(sx,sy+11,9,3,0,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1;
+ ctx.fillStyle=flash?'#ff8888':'#3d5e2a'; ctx.fillRect(sx-6,sy-4,12,13);
+ ctx.fillStyle=flash?'#ffccaa':'#7a9a5a'; ctx.beginPath(); ctx.arc(sx,sy-8+bob,7,0,Math.PI*2); ctx.fill();
+ ctx.fillStyle='#ff2200'; ctx.beginPath(); ctx.arc(sx-3,sy-9+bob,2,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(sx+3,sy-9+bob,2,0,Math.PI*2); ctx.fill();
+ if (e.hp<e.maxHp) { ctx.fillStyle='#400'; ctx.fillRect(sx-10,sy-20,20,3); ctx.fillStyle='#f44'; ctx.fillRect(sx-10,sy-20,20*(e.hp/e.maxHp),3); }
+}
+
+function drawItems() {
+  items.forEach(it => {
+    const sx = it.x - cam.x;
+    const sy = it.y - cam.y;
+    const bounce = Math.sin(it.animTime * 0.12) * 3.5;
+    
+    if (it.type === 'cupcake') {
+      ctx.fillStyle = '#e8a0c0';
+      ctx.fillRect(sx - 6, sy + bounce, 12, 6);
+      ctx.fillStyle = '#fff0f5';
+      ctx.beginPath(); ctx.arc(sx, sy - 1 + bounce, 7, 0, Math.PI, true); ctx.fill();
+      ctx.fillStyle = '#ff3366';
+      ctx.fillRect(sx - 2, sy - 9 + bounce, 4, 4);
+      
+      ctx.shadowBlur = 8; ctx.shadowColor = '#ff99cc';
+      ctx.strokeStyle = '#ff99cc'; ctx.lineWidth = 1;
+      ctx.strokeRect(sx - 8, sy - 8 + bounce, 16, 16);
+      ctx.shadowBlur = 0;
+    }
+  });
+}
+
+function drawPrincess() {
+ for (let ty=0; ty<ROWS; ty++) for (let tx=0; tx<COLS; tx++) {
+   if (MAP[ty][tx]!==3) continue;
+   const sx=tx*TS+TS/2-cam.x, sy=ty*TS+TS/2-cam.y; const bob=Math.sin(frameCount*0.05)*3;
+   ctx.shadowBlur=20; ctx.shadowColor='#ff99cc'; ctx.fillStyle='#e060a0';
+   ctx.beginPath(); ctx.moveTo(sx,sy+14+bob); ctx.lineTo(sx-10,sy+2+bob); ctx.lineTo(sx+10,sy+2+bob); ctx.closePath(); ctx.fill();
+   ctx.fillStyle='#f090b8'; ctx.fillRect(sx-5,sy-8+bob,10,12);
+   ctx.fillStyle='#ffd0a0'; ctx.beginPath(); ctx.arc(sx,sy-14+bob,7,0,Math.PI*2); ctx.fill(); ctx.shadowBlur=0;
+   if (enemies.length>0) { ctx.fillStyle='#ffaacc'; ctx.font='10px monospace'; ctx.textAlign='center'; ctx.fillText('Спаси меня!',sx,sy-32+bob); ctx.textAlign='left'; }
+ }
+}
+
+function drawHelperButton(zone, text, color) {
+  ctx.fillStyle = '#22150c';
+  ctx.fillRect(zone.x, zone.y, zone.w, zone.h);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(zone.x, zone.y, zone.w, zone.h);
+  ctx.fillStyle = text === 'РЫЦАРЬ [1]' ? '#e8c840' : '#66ff66';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(text, zone.x + zone.w/2, zone.y + zone.h/2 + 5);
+}
+
+function draw() {
+ ctx.fillStyle='#0a0608'; ctx.fillRect(0,0,W,H);
+ 
+ if (state === 'idle') {
+   ctx.fillStyle = 'rgba(5,2,3,0.9)'; ctx.fillRect(0,0,W,H); 
+   ctx.textAlign = 'center';
+   
+   ctx.fillStyle = '#e8c840'; ctx.font = 'bold 26px monospace'; 
+   ctx.fillText('ВЫБЕРИТЕ СВОЙ КЛАСС', W/2, H/2 - 90);
+   
+   ctx.fillStyle = '#8a7a68'; ctx.font = '13px monospace';
+   ctx.fillText('Игра загружает ваш файл "image.png"', W/2, H/2 - 50);
+   
+   drawHelperButton(btnKnightZone, 'РЫЦАРЬ [1]', '#c8a040');
+   drawHelperButton(btnArcherZone, 'ЛУЧНИК [2]', '#52a852');
+   
+   ctx.textAlign = 'left';
+   ctx.font = '12px monospace';
+   
+   ctx.fillStyle = '#9098a0';
+   ctx.fillText('• Обязательно сохраните спрайт как "image.png"', btnKnightZone.x, H/2 + 50);
+   ctx.fillText('• Положите файл в папку со скриптом игры!', btnKnightZone.x, H/2 + 70);
+   ctx.fillText('• 5 кадров цикличной анимации шага', btnKnightZone.x, H/2 + 90);
+   
+   ctx.fillStyle = '#a28065';
+   ctx.fillText('• Рыцарь: Верхний ряд текстуры', btnArcherZone.x, H/2 + 50);
+   ctx.fillText('• Лучник: Нижний ряд текстуры', btnArcherZone.x, H/2 + 70);
+   ctx.fillText('• Разворот текстур по направлению бега', btnArcherZone.x, H/2 + 90);
+   
+   ctx.textAlign = 'center';
+   ctx.fillStyle = '#4a5a4a'; ctx.font = '11px monospace';
+   ctx.fillText('[ Нажмите на экранную кнопку или клавиши 1 / 2 ]', W/2, H - 30);
+   ctx.textAlign = 'left';
+   return;
+ }
+
+ const sc=Math.floor(cam.x/TS), ec=Math.min(COLS,sc+Math.ceil(W/TS)+2);
+ const sr=Math.floor(cam.y/TS), er=Math.min(ROWS,sr+Math.ceil(H/TS)+2);
+ for (let ty=sr; ty<er; ty++) for (let tx=sc; tx<ec; tx++) drawTile(tx,ty);
+ drawPrincess();
+ drawItems();
+ 
+ particles.forEach(p => { ctx.globalAlpha=p.life; ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x-cam.x,p.y-cam.y,p.r,0,Math.PI*2); ctx.fill(); });
+ ctx.globalAlpha=1;
+ 
+ arrows.forEach(a => { 
+   ctx.save(); 
+   ctx.translate(a.x-cam.x,a.y-cam.y); 
+   ctx.rotate(Math.atan2(a.vy,a.vx)); 
+   if (a.isPiercing) {
+     ctx.fillStyle = '#66ff66';
+     ctx.shadowBlur = 10;
+     ctx.shadowColor = '#66ff66';
+     ctx.fillRect(-12,-2,22,5); 
+   } else {
+     ctx.fillStyle = '#c8a040';
+     ctx.fillRect(-8,-1,16,3); 
+   }
+   ctx.restore(); 
+   ctx.shadowBlur = 0;
+ });
+ 
+ enemies.forEach(e => drawZombie(e));
+ drawPlayer();
+
+ if (state==='playing') {
+   ctx.fillStyle=enemies.length>0?'#cc4444':'#44cc44'; ctx.font='12px monospace'; ctx.textAlign='right'; ctx.fillText('💀 '+enemies.length,W-10,H-10); ctx.textAlign='left';
+ }
+ if (state==='dead') {
+   ctx.fillStyle='rgba(5,0,0,0.85)'; ctx.fillRect(0,0,W,H); ctx.textAlign='center';
+   ctx.fillStyle='#ff3333'; ctx.font='bold 24px monospace'; ctx.fillText('ВЫ ПАЛИ В БОЮ...',W/2,H/2-20);
+   ctx.fillStyle='#aaa'; ctx.font='12px monospace'; ctx.fillText('[ Кликните для возврата в меню ]',W/2,H/2+30); ctx.textAlign='left';
+ }
+ if (state==='win') {
+   ctx.fillStyle='rgba(5,2,15,0.88)'; ctx.fillRect(0,0,W,H); ctx.textAlign='center';
+   ctx.fillStyle='#ff99cc'; ctx.font='bold 24px monospace'; ctx.fillText('🌸 ПРИНЦЕССА СПАСЕНА! 🌸',W/2,H/2-20);
+   ctx.fillStyle='#aaa'; ctx.font='12px monospace'; ctx.fillText('[ Кликните, чтобы сыграть еще ]',W/2,H/2+30); ctx.textAlign='left';
+ }
+}
+
+function loop() {
+ if (state==='playing') update();
+ draw();
+ requestAnimationFrame(loop);
+}
+
+const touchZone = document.getElementById('touchZone');
+const joystick = document.getElementById('joystick');
+let joyMaxDist = 40;
+let joyStartX = 0, joyStartY = 0;
+
+touchZone.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  const rect = touchZone.getBoundingClientRect();
+  joyStartX = rect.left + rect.width / 2;
+  joyStartY = rect.top + rect.height / 2;
+});
+
+touchZone.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (state !== 'playing') return;
+  const t = e.touches[0];
+  let dx = t.clientX - joyStartX;
+  let dy = t.clientY - joyStartY;
+  let dist = Math.sqrt(dx*dx + dy*dy);
+  
+  if (dist > joyMaxDist) {
+    dx = (dx / dist) * joyMaxDist;
+    dy = (dy / dist) * joyMaxDist;
+    dist = joyMaxDist;
+  }
+  
+  joystick.style.transform = `translate(${dx}px, ${dy}px)`;
+  touchInput.dx = dx / joyMaxDist;
+  touchInput.dy = dy / joyMaxDist;
+});
+
+touchZone.addEventListener('touchend', () => {
+  joystick.style.transform = 'translate(0px, 0px)';
+  touchInput.dx = 0;
+  touchInput.dy = 0;
+});
+
+document.getElementById('btnSword').addEventListener('touchstart', (e) => { e.preventDefault(); mobileAction.sword = true; });
+
+const bowBtn = document.getElementById('btnBow');
+bowBtn.addEventListener('touchstart', (e) => { e.preventDefault(); mobileAction.bow = true; });
+bowBtn.addEventListener('touchend', (e) => { e.preventDefault(); mobileAction.bow = false; });
+
+const shieldBtn = document.getElementById('btnShield');
+shieldBtn.addEventListener('touchstart', (e) => { e.preventDefault(); mobileAction.shield = true; });
+shieldBtn.addEventListener('touchend', (e) => { e.preventDefault(); mobileAction.shield = false; });
+
+loop();
+</script>
+</body>
+</html>
